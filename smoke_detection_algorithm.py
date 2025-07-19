@@ -97,12 +97,12 @@ class SmokeAlarmDetector:
         
         signal_to_noise = peak_magnitude / (background_noise + 1e-10)
         
-        # Stringent thresholds for beep detection
-        magnitude_threshold = np.percentile(magnitudes, 95)  # Top 5% of frequencies
+        # More reasonable thresholds for beep detection
+        magnitude_threshold = np.percentile(magnitudes, 90)  # Top 10% of frequencies
         
-        if (signal_to_noise > 25.0 and  # High SNR threshold for chirp rejection
-            peak_magnitude > magnitude_threshold * 4.0 and  # Strong absolute signal
-            peak_magnitude > np.mean(magnitudes) * 100):  # Very strong signal check
+        if (signal_to_noise > 10.0 and  # Reasonable SNR threshold
+            peak_magnitude > magnitude_threshold * 2.0 and  # Strong absolute signal
+            peak_magnitude > np.mean(magnitudes) * 15):  # Strong signal check
             
             # Use provided timestamp or current time
             current_time = timestamp if timestamp is not None else time.time()
@@ -117,11 +117,19 @@ class SmokeAlarmDetector:
         Returns:
             True if smoke alarm pattern is detected
         """
-        # Add beep timestamp
-        self.beep_timestamps.append(timestamp)
+        # Consolidate consecutive beeps - if this beep is within 1 second of the last one,
+        # consider it the same beep and don't add a new timestamp
+        consolidation_window = 1.0  # seconds
+        if (len(self.beep_timestamps) > 0 and 
+            timestamp - self.beep_timestamps[-1] < consolidation_window):
+            # This is part of the same beep, don't add a new timestamp
+            pass
+        else:
+            # This is a new beep
+            self.beep_timestamps.append(timestamp)
         
-        # Check for alarm pattern - need at least 4 beeps for reliable pattern detection
-        if len(self.beep_timestamps) >= max(4, self.confidence_threshold):
+        # Check for alarm pattern - need at least 3 beeps for reliable pattern detection
+        if len(self.beep_timestamps) >= max(3, self.confidence_threshold):
             intervals = []
             for i in range(1, len(self.beep_timestamps)):
                 intervals.append(self.beep_timestamps[i] - self.beep_timestamps[i-1])
@@ -133,14 +141,14 @@ class SmokeAlarmDetector:
                 avg_interval = np.mean(recent_intervals)
                 interval_std = np.std(recent_intervals)
                 
-                # Strict pattern matching
-                if (2.8 <= avg_interval <= 4.2 and  # Tighter interval range
-                    interval_std < 0.5 and  # More consistent timing
-                    strength > 40.0 and  # Much higher signal strength requirement
+                # Reasonable pattern matching for smoke alarms
+                if (2.5 <= avg_interval <= 4.5 and  # Typical smoke alarm interval range
+                    interval_std < 3.0 and  # Allow more timing variation for real-world conditions
+                    strength > 15.0 and  # Reasonable signal strength requirement
                     self.target_frequency - self.frequency_tolerance <= frequency <= self.target_frequency + self.frequency_tolerance):
                     
                     # Additional check: ensure we have sustained pattern
-                    min_beeps_in_sequence = 4
+                    min_beeps_in_sequence = 3  # Reduced from 4 to 3
                     if len(self.beep_timestamps) >= min_beeps_in_sequence:
                         return True
         
@@ -250,11 +258,14 @@ class SmokeAlarmDetector:
                 # Calculate actual detection time
                 detection_time = chunk_start_time + (chunk_samples / sr / 2)  # Middle of chunk
                 
-                detections.append({
-                    'timestamp': detection_time,
-                    'frequency': self.target_frequency,
-                    'confidence': 1.0  # Could calculate actual confidence
-                })
+                # Consolidate detections - avoid duplicates within 5 seconds
+                consolidation_window = 5.0  # seconds
+                if not detections or detection_time - detections[-1]['timestamp'] > consolidation_window:
+                    detections.append({
+                        'timestamp': detection_time,
+                        'frequency': self.target_frequency,
+                        'confidence': 1.0  # Could calculate actual confidence
+                    })
         
         if verbose:
             if detections:
