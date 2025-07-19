@@ -1,0 +1,70 @@
+{
+  "test_cases": [
+    {
+      "url": "https://www.youtube.com/watch?v=bdVE3dvvBT0",
+      "description": "First Alert SA511",
+      "filename": "first_alert_sa511.wav",
+      "start_time": 124.0,
+      "end_time": 168.0,
+      "duration": 44.0,
+      "expected_alarms": [
+        25.0
+      ],
+      "extracted": true
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=bdVE3dvvBT0",
+      "description": "First Alert 7010B",
+      "filename": "first_alert_7010b.wav",
+      "start_time": 62.0,
+      "end_time": 90.0,
+      "duration": 28.0,
+      "expected_alarms": [
+        16.0
+      ],
+      "extracted": true
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=bdVE3dvvBT0",
+      "description": "First Alert SA302",
+      "filename": "first_alert_sa302.wav",
+      "start_time": 90.0,
+      "end_time": 115.0,
+      "duration": 25.0,
+      "expected_alarms": [
+        11.0
+      ],
+      "extracted": true
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=JLzM3wA8oeI",
+      "description": "No alarms - Leaf blower",
+      "filename": "no_alarms_-_leaf_blower.wav",
+      "start_time": 0.0,
+      "end_time": 210.0,
+      "duration": 210.0,
+      "expected_alarms": [],
+      "extracted": true
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=WqWraWeXSUE",
+      "description": "No alarms - low battery chirp",
+      "filename": "no_alarms_-_low_battery_chirp.wav",
+      "start_time": 0.0,
+      "end_time": 150.0,
+      "duration": 150.0,
+      "expected_alarms": [],
+      "extracted": true
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=gD6qqLgKvEk",
+      "description": "No alarms - edm music",
+      "filename": "no_alarms_-_edm_music.wav",
+      "start_time": 0.0,
+      "end_time": 150.0,
+      "duration": 150.0,
+      "expected_alarms": [],
+      "extracted": true
+    }
+  ]
+}
