@@ -8,7 +8,7 @@ import numpy as np
 from scipy import signal
 import time
 from collections import deque
-from typing import Optional, Dict, Callable
+from typing import Optional, Dict, Callable, Any
 
 
 class SmokeAlarmDetector:
@@ -39,6 +39,13 @@ class SmokeAlarmDetector:
         # Detection callback
         self.detection_callback: Optional[Callable[[Dict], None]] = None
         
+        # Instrumentation hooks (initialized to None)
+        self.on_chunk_analyzed: Optional[Callable[[Dict[str, Any]], None]] = None
+        self.on_peak_found: Optional[Callable[[Dict[str, Any]], None]] = None
+        self.on_signal_strength_calculated: Optional[Callable[[Dict[str, Any]], None]] = None
+        self.on_detection_recorded: Optional[Callable[[Dict[str, Any]], None]] = None
+        self.on_sustained_analysis: Optional[Callable[[Dict[str, Any]], None]] = None
+        
         # State tracking for improved algorithm
         self.start_time: Optional[float] = None
         self.ambient_background_level = 0.0
@@ -50,10 +57,6 @@ class SmokeAlarmDetector:
         self.last_alarm_time: Optional[float] = None
         self.is_alarm_latched = False
         
-        # Legacy compatibility
-        self.beep_timestamps = deque(maxlen=10)  # samples - Legacy beep timestamp storage (10 most recent)
-    
-    
     def process_audio_chunk(self, audio_data: np.ndarray, timestamp: Optional[float] = None) -> Optional[Dict]:
         """
         Process an audio chunk and return detection info if a smoke alarm pattern is detected.
@@ -85,6 +88,16 @@ class SmokeAlarmDetector:
         fft = np.fft.rfft(windowed)
         freqs = np.fft.rfftfreq(len(windowed), 1/self.sample_rate)
         magnitudes = np.abs(fft)
+        
+        # Instrumentation: Basic FFT analysis complete
+        if self.on_chunk_analyzed:
+            self.on_chunk_analyzed({
+                'timestamp': current_time,
+                'fft_size': len(fft),
+                'magnitudes': magnitudes,
+                'freqs': freqs,
+                'mean_magnitude': np.mean(magnitudes)
+            })
         
         # Calculate overall background level (excluding target frequency)
         target_range = (
@@ -123,9 +136,34 @@ class SmokeAlarmDetector:
         peak_magnitude = target_magnitudes[peak_idx]
         peak_frequency = target_freqs[peak_idx]
         
+        # Instrumentation: Peak found in target range
+        if self.on_peak_found:
+            self.on_peak_found({
+                'timestamp': current_time,
+                'peak_frequency': peak_frequency,
+                'peak_magnitude': peak_magnitude,
+                'target_magnitudes': target_magnitudes,
+                'target_freqs': target_freqs,
+                'peak_idx': peak_idx
+            })
+        
         # Calculate metrics for alarm detection
         signal_to_background = peak_magnitude / (self.ambient_background_level + 1e-10)  # ratio - Add small epsilon to prevent division by zero
         signal_to_current = peak_magnitude / (current_background + 1e-10)  # ratio - Prevents division by zero with small epsilon
+        
+        # Instrumentation: Signal strength calculations
+        if self.on_signal_strength_calculated:
+            self.on_signal_strength_calculated({
+                'timestamp': current_time,
+                'peak_magnitude': peak_magnitude,
+                'peak_frequency': peak_frequency,
+                'signal_to_background': signal_to_background,
+                'signal_to_current': signal_to_current,
+                'ambient_background_level': self.ambient_background_level,
+                'current_background': current_background,
+                'magnitude_threshold_90': np.percentile(magnitudes, 90),
+                'mean_magnitude': np.mean(magnitudes)
+            })
         
         # Check if signal is strong enough with more stringent criteria
         is_strong_signal = (
@@ -151,6 +189,17 @@ class SmokeAlarmDetector:
             'signal_ratio': signal_ratio,
             'magnitude': magnitude
         })
+        
+        # Instrumentation: Detection window recorded
+        if self.on_detection_recorded:
+            self.on_detection_recorded({
+                'timestamp': timestamp,
+                'is_strong_signal': is_strong_signal,
+                'frequency': frequency,
+                'signal_ratio': signal_ratio,
+                'magnitude': magnitude,
+                'total_detection_windows': len(self.detection_windows)
+            })
     
     def _analyze_sustained_detection(self, current_time: float, peak_frequency: float, 
                                      signal_ratio: float) -> Optional[Dict]:
@@ -223,6 +272,24 @@ class SmokeAlarmDetector:
             len(strong_detections) >= 5  # samples - Need at least 5 strong detections for sustained alarm confirmation
         )
         
+        # Instrumentation: Sustained analysis complete
+        if self.on_sustained_analysis:
+            self.on_sustained_analysis({
+                'timestamp': current_time,
+                'total_detections': total_detections,
+                'strong_signal_count': strong_signal_count,
+                'frequency_occupation_ratio': frequency_occupation_ratio,
+                'avg_frequency': avg_frequency,
+                'freq_std': freq_std,
+                'avg_signal_ratio': avg_signal_ratio,
+                'signal_ratio_std': signal_ratio_std,
+                'signal_strength_variation': signal_strength_variation,
+                'is_reasonable_occupation': is_reasonable_occupation,
+                'has_reasonable_variation': has_reasonable_variation,
+                'has_appropriate_consistency': has_appropriate_consistency,
+                'alarm_detected': alarm_detected
+            })
+        
         if alarm_detected:
             # Set latch to prevent immediate re-triggering
             self.last_alarm_time = current_time
@@ -238,12 +305,6 @@ class SmokeAlarmDetector:
                 'analysis_window': analysis_window
             }
         
-        return None
-    
-    def _record_beep(self, timestamp: float, frequency: float, strength: float) -> Optional[Dict]:
-        """Legacy method maintained for compatibility."""
-        # For compatibility with existing code, but the new algorithm doesn't use this
-        self.beep_timestamps.append(timestamp)
         return None
     
     def get_detection_info(self) -> dict:
@@ -282,6 +343,26 @@ class SmokeAlarmDetector:
     def set_detection_callback(self, callback: Callable[[Dict], None]) -> None:
         """Set callback function to be called when detection occurs."""
         self.detection_callback = callback
+    
+    def set_instrumentation_hooks(
+        self,
+        on_chunk_analyzed: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_peak_found: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_signal_strength_calculated: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_detection_recorded: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_sustained_analysis: Optional[Callable[[Dict[str, Any]], None]] = None
+    ) -> None:
+        """Set instrumentation hooks for debugging and analysis."""
+        if on_chunk_analyzed is not None:
+            self.on_chunk_analyzed = on_chunk_analyzed
+        if on_peak_found is not None:
+            self.on_peak_found = on_peak_found
+        if on_signal_strength_calculated is not None:
+            self.on_signal_strength_calculated = on_signal_strength_calculated
+        if on_detection_recorded is not None:
+            self.on_detection_recorded = on_detection_recorded
+        if on_sustained_analysis is not None:
+            self.on_sustained_analysis = on_sustained_analysis
     
     def process_audio_stream(self, audio_data: np.ndarray, timestamp: Optional[float] = None) -> Optional[Dict]:
         """Process audio stream chunk and trigger callback if detection occurs.
