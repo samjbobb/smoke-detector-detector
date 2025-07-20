@@ -16,8 +16,8 @@ class SmokeAlarmDetector:
     
     def __init__(
         self,
-        sample_rate: int = 22050,  # Hz - Audio sampling rate (22.05 kHz, sufficient for 3.2kHz detection)
-        chunk_size: int = 4096,  # samples - FFT window size, determines frequency resolution (~10.8 Hz at 22.05 kHz)
+        sample_rate: int = 44100,  # Hz - Audio sampling rate (44.1 kHz standard)
+        chunk_size: int = 4096,  # samples - FFT window size, determines frequency resolution (~10.8 Hz at 44.1 kHz)
         target_frequency: float = 3200.0,  # Hz - Typical smoke alarm beep frequency (3.2 kHz)
         frequency_tolerance: float = 400.0,  # Hz - Frequency search range (±400 Hz around target)
         ambient_learning_time: float = 10.0,  # seconds - Time to learn background noise levels at startup
