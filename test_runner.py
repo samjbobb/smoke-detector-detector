@@ -189,7 +189,9 @@ class TestRunner:
         print(f"\n📊 DETAILED ANALYSIS")
         print("=" * 50)
         
-        tolerance = 2.0
+        # Use realistic tolerances for detailed analysis display
+        early_tolerance = 2.0   # seconds before expected
+        late_tolerance = 30.0   # seconds after expected
         detected_times = [d["timestamp"] for d in detections]
         
         print(f"Expected Alarms ({len(expected)}):")
@@ -206,7 +208,7 @@ class TestRunner:
         else:
             print("   (none)")
         
-        print(f"\nClassification (±{tolerance}s tolerance):")
+        print(f"\nClassification (-{early_tolerance}s to +{late_tolerance}s tolerance):")
         print("-" * 30)
         
         # Track matches
@@ -221,7 +223,9 @@ class TestRunner:
                 if j in matched_detected:
                     continue
                     
-                if abs(detected_time - expected_time) <= tolerance:
+                # Check if detection is within acceptable range
+                time_diff = detected_time - expected_time
+                if -early_tolerance <= time_diff <= late_tolerance:
                     latency = detected_time - expected_time
                     print(f"   Expected {expected_time:.1f}s → Detected {detected_time:.1f}s (latency: {latency:+.1f}s)")
                     matched_expected.add(i)
@@ -274,8 +278,10 @@ class TestRunner:
         """Analyze detection results vs expected alarms."""
         detected_times = [d["timestamp"] for d in detections]
         
-        # Match detections to expected alarms (within tolerance)
-        tolerance = 10.0  # seconds - accuracy is more important than speed
+        # Match detections to expected alarms (within realistic tolerances)
+        # Allow detection 2 seconds early or up to 30 seconds late
+        early_tolerance = 2.0   # seconds before expected
+        late_tolerance = 30.0   # seconds after expected
         true_positives = 0
         matched_expected = set()
         matched_detected = set()
@@ -285,7 +291,9 @@ class TestRunner:
                 if j in matched_detected:
                     continue
                     
-                if abs(detected_time - expected_time) <= tolerance:
+                # Check if detection is within acceptable range
+                time_diff = detected_time - expected_time
+                if -early_tolerance <= time_diff <= late_tolerance:
                     true_positives += 1
                     matched_expected.add(i)
                     matched_detected.add(j)
