@@ -233,7 +233,7 @@ def main():
             channels=1,
             samplerate=detector.sample_rate,
             blocksize=detector.chunk_size,
-            latency='high'  # Increase buffer size to prevent overflow
+            latency=0.2  # 200ms buffer (explicit value instead of 'high')
         ):
             while True:
                 time.sleep(0.1)

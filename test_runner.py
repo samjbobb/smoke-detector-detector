@@ -262,17 +262,6 @@ class TestRunner:
         
         if result['avg_latency'] is not None:
             print(f"   Average Latency: {result['avg_latency']:+.2f}s")
-        
-        # Recommendations
-        print(f"\n💡 RECOMMENDATIONS:")
-        if result['false_positives'] > result['true_positives']:
-            print("   • High false positive rate - consider tightening detection thresholds")
-        if result['false_negatives'] > 0:
-            print("   • Missing alarms - consider lowering detection thresholds or adjusting frequency range")
-        if result['f1_score'] < 0.8:
-            print("   • Overall performance needs improvement - review algorithm parameters")
-        if result['f1_score'] >= 0.9:
-            print("   • Excellent performance! 🎉")
     
     def _analyze_results(self, detections: List[Dict], expected: List[float], test_case: Dict) -> Dict:
         """Analyze detection results vs expected alarms."""
@@ -395,16 +384,6 @@ class TestRunner:
         if avg_latency is not None:
             print(f"Average Detection Latency: {avg_latency:.2f}s")
         
-        print("\n📈 Performance Assessment:")
-        if avg_f1 >= 0.9:
-            print("🎉 Excellent performance!")
-        elif avg_f1 >= 0.8:
-            print("✅ Good performance")
-        elif avg_f1 >= 0.6:
-            print("⚠️  Acceptable performance - consider tuning")
-        else:
-            print("❌ Poor performance - needs significant improvement")
-
 
 def main():
     import argparse
