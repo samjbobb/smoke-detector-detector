@@ -17,7 +17,6 @@ class TestRunner:
     def __init__(self, test_dir: str = "test_audio"):
         self.test_dir = Path(test_dir)
         self.config_file = self.test_dir / "test_cases.json"
-        self.detector = SmokeAlarmDetector()
     
     def load_test_cases(self) -> List[Dict]:
         """Load test case configuration."""
@@ -122,25 +121,26 @@ class TestRunner:
         if verbose:
             print(f"   Loading audio file...")
         
+        # Create fresh detector instance for this test
+        detector = SmokeAlarmDetector()
+        
         # Load audio file
         try:
-            audio_data, sr = librosa.load(audio_file, sr=self.detector.sample_rate, mono=True)
+            audio_data, sr = librosa.load(audio_file, sr=detector.sample_rate, mono=True)
         except Exception as e:
             print(f"   ❌ Error loading audio file: {e}")
             return []
         
-        # Reset detection state
-        self.detector.reset_state()
         detections = []
         
         # Set up detection callback to collect results
         def collect_detection(detection: Dict) -> None:
             detections.append(detection)
         
-        self.detector.set_detection_callback(collect_detection)
+        detector.set_detection_callback(collect_detection)
         
         # Process audio in chunks
-        chunk_samples = self.detector.chunk_size
+        chunk_samples = detector.chunk_size
         total_chunks = len(audio_data) // chunk_samples
         
         if verbose:
@@ -152,7 +152,7 @@ class TestRunner:
             chunk_start_time = i / sr
             
             # Stream chunk to detector - same method as live monitoring
-            self.detector.process_audio_stream(chunk, chunk_start_time)
+            detector.process_audio_stream(chunk, chunk_start_time)
         
         if verbose:
             if detections:

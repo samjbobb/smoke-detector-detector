@@ -42,9 +42,6 @@ class SmokeAlarmDetector:
         # Detection state
         self.beep_timestamps = deque(maxlen=10)
     
-    def reset_state(self):
-        """Reset detection state."""
-        self.beep_timestamps.clear()
     
     def process_audio_chunk(self, audio_data: np.ndarray, timestamp: Optional[float] = None) -> Optional[Dict]:
         """
