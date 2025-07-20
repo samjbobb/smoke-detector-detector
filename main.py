@@ -232,7 +232,8 @@ def main():
             callback=lambda indata, frames, time_info, status: audio_callback(indata, frames, time_info, status, detector),
             channels=1,
             samplerate=detector.sample_rate,
-            blocksize=detector.chunk_size
+            blocksize=detector.chunk_size,
+            latency='high'  # Increase buffer size to prevent overflow
         ):
             while True:
                 time.sleep(0.1)
