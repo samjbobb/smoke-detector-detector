@@ -45,13 +45,21 @@ def create_trigger_alarm_callback(notification_manager: NotificationManager):
             
             # Run notifications in background to not block detection
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If we're already in an async context, create a task
-                    loop.create_task(notification_manager.notify_all(event))
-                else:
-                    # Run in new event loop
-                    asyncio.run(notification_manager.notify_all(event))
+                # Try to get the main thread's event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Schedule the coroutine to run in the main thread's event loop
+                    asyncio.run_coroutine_threadsafe(notification_manager.notify_all(event), loop)
+                except RuntimeError:
+                    # No running loop, create a new one in a thread
+                    import threading
+                    
+                    def run_notification():
+                        asyncio.run(notification_manager.notify_all(event))
+                    
+                    thread = threading.Thread(target=run_notification, daemon=True)
+                    thread.start()
+                    
             except Exception as e:
                 logging.error(f"Failed to send notifications: {e}")
                 print(f"⚠️  Failed to send notifications: {e}")
