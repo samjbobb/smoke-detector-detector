@@ -16,15 +16,15 @@ class SmokeAlarmDetector:
     
     def __init__(
         self,
-        sample_rate: int = 44100,
-        chunk_size: int = 4096,
-        target_frequency: float = 3200.0,
-        frequency_tolerance: float = 400.0,  # Increased tolerance
-        ambient_learning_time: float = 10.0,  # Seconds to learn ambient levels
-        alarm_sustain_threshold: float = 4.0,  # Seconds of sustained signal to trigger
-        alarm_latch_time: float = 300.0,  # 5 minutes latch period
-        min_signal_ratio: float = 75.0,  # Minimum signal to background ratio (further increased)
-        frequency_occupation_threshold: float = 0.25  # Minimum % of time frequency must be present
+        sample_rate: int = 44100,  # Hz - Audio sampling rate (44.1 kHz standard)
+        chunk_size: int = 4096,  # samples - FFT window size, determines frequency resolution (~10.8 Hz at 44.1 kHz)
+        target_frequency: float = 3200.0,  # Hz - Typical smoke alarm beep frequency (3.2 kHz)
+        frequency_tolerance: float = 400.0,  # Hz - Frequency search range (±400 Hz around target)
+        ambient_learning_time: float = 10.0,  # seconds - Time to learn background noise levels at startup
+        alarm_sustain_threshold: float = 4.0,  # seconds - Required duration of sustained signal for alarm detection
+        alarm_latch_time: float = 300.0,  # seconds - Cooldown period after alarm (5 minutes) to prevent spam
+        min_signal_ratio: float = 75.0,  # ratio - Minimum signal-to-background strength required (dimensionless)
+        frequency_occupation_threshold: float = 0.25  # ratio - Minimum fraction of time frequency must be present (25%)
     ):
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
@@ -46,12 +46,12 @@ class SmokeAlarmDetector:
         self.is_learning_ambient = True
         
         # Track detection windows for sustained signal analysis
-        self.detection_windows = deque(maxlen=100)  # Store recent detection results
+        self.detection_windows = deque(maxlen=100)  # samples - Store recent detection results (circular buffer)
         self.last_alarm_time: Optional[float] = None
         self.is_alarm_latched = False
         
         # Legacy compatibility
-        self.beep_timestamps = deque(maxlen=10)
+        self.beep_timestamps = deque(maxlen=10)  # samples - Legacy beep timestamp storage (10 most recent)
     
     
     def process_audio_chunk(self, audio_data: np.ndarray, timestamp: Optional[float] = None) -> Optional[Dict]:
@@ -97,7 +97,7 @@ class SmokeAlarmDetector:
         if np.any(background_mask):
             current_background = np.mean(magnitudes[background_mask])
         else:
-            current_background = np.mean(magnitudes) * 0.1
+            current_background = np.mean(magnitudes) * 0.1  # ratio - Fallback: 10% of average magnitude as background estimate
         
         # Learn ambient levels during startup
         time_since_start = current_time - self.start_time
@@ -124,14 +124,14 @@ class SmokeAlarmDetector:
         peak_frequency = target_freqs[peak_idx]
         
         # Calculate metrics for alarm detection
-        signal_to_background = peak_magnitude / (self.ambient_background_level + 1e-10)
-        signal_to_current = peak_magnitude / (current_background + 1e-10)
+        signal_to_background = peak_magnitude / (self.ambient_background_level + 1e-10)  # ratio - Add small epsilon to prevent division by zero
+        signal_to_current = peak_magnitude / (current_background + 1e-10)  # ratio - Prevents division by zero with small epsilon
         
         # Check if signal is strong enough with more stringent criteria
         is_strong_signal = (
             signal_to_background > self.min_signal_ratio and
-            signal_to_current > 8.0 and  # Increased from 5.0
-            peak_magnitude > np.mean(magnitudes) * 12.0  # Increased from 8.0
+            signal_to_current > 8.0 and  # ratio - Signal must be 8x stronger than current background noise
+            peak_magnitude > np.mean(magnitudes) * 12.0  # ratio - Peak must be 12x the average FFT magnitude
         )
         
         # Record this detection window
@@ -159,7 +159,7 @@ class SmokeAlarmDetector:
         
         This replaces the 3-beep pattern detection with frequency/loudness/time-domain analysis.
         """
-        if len(self.detection_windows) < 5:  # Need some history
+        if len(self.detection_windows) < 5:  # samples - Need minimum detection history for analysis
             return None
         
         # Analyze recent window (last N seconds)
@@ -169,7 +169,7 @@ class SmokeAlarmDetector:
             if current_time - d['timestamp'] <= analysis_window
         ]
         
-        if len(recent_detections) < 3:  # Need minimum samples
+        if len(recent_detections) < 3:  # samples - Need minimum samples in analysis window for reliable detection
             return None
         
         # Calculate metrics over the analysis window
@@ -179,7 +179,7 @@ class SmokeAlarmDetector:
         
         # Get frequency consistency
         strong_detections = [d for d in recent_detections if d['is_strong_signal']]
-        if len(strong_detections) < 2:
+        if len(strong_detections) < 2:  # samples - Need at least 2 strong signals for frequency consistency analysis
             return None
             
         frequencies = [d['frequency'] for d in strong_detections]
@@ -200,17 +200,17 @@ class SmokeAlarmDetector:
         
         # Check for temporal variation (smoke alarms often have pulses, not constant tones)
         # If occupation is too high (near 100%), it might be music or constant noise
-        is_reasonable_occupation = 0.20 <= frequency_occupation_ratio <= 0.80
+        is_reasonable_occupation = 0.20 <= frequency_occupation_ratio <= 0.80  # ratio - 20-80% occupation range for realistic alarm patterns
         
         # Check signal strength variation - smoke alarms often have some variation
-        signal_strength_variation = signal_ratio_std / (avg_signal_ratio + 1e-10)
-        has_reasonable_variation = 0.1 <= signal_strength_variation <= 2.0
+        signal_strength_variation = signal_ratio_std / (avg_signal_ratio + 1e-10)  # ratio - Coefficient of variation (dimensionless)
+        has_reasonable_variation = 0.1 <= signal_strength_variation <= 2.0  # ratio - 10-200% variation range for natural alarm signals
         
         # Exclude sounds that are too consistent (like pure tones) OR too inconsistent (like noise/music)
         # Sweet spot: some variation but not too much
         has_appropriate_consistency = (
-            ((10.0 < freq_std < 100.0) or (freq_std <= 10.0 and avg_signal_ratio > 500)) and  # Allow very consistent strong signals
-            (0.2 < signal_strength_variation < 1.2)  # Moderate variation expected
+            ((10.0 < freq_std < 100.0) or (freq_std <= 10.0 and avg_signal_ratio > 500)) and  # Hz - Allow 10-100 Hz variation OR very strong consistent signals
+            (0.2 < signal_strength_variation < 1.2)  # ratio - 20-120% strength variation for realistic alarms
         )
         
         alarm_detected = (
@@ -220,7 +220,7 @@ class SmokeAlarmDetector:
             has_reasonable_variation and  # Some strength variation expected  
             has_appropriate_consistency and  # Proper frequency and strength consistency
             self.target_frequency - self.frequency_tolerance <= avg_frequency <= self.target_frequency + self.frequency_tolerance and
-            len(strong_detections) >= 5  # Need sustained detection over multiple chunks
+            len(strong_detections) >= 5  # samples - Need at least 5 strong detections for sustained alarm confirmation
         )
         
         if alarm_detected:
@@ -232,7 +232,7 @@ class SmokeAlarmDetector:
                 'timestamp': current_time,
                 'frequency': avg_frequency,
                 'strength': avg_signal_ratio,
-                'confidence': min(1.0, frequency_occupation_ratio * 2.0),
+                'confidence': min(1.0, frequency_occupation_ratio * 2.0),  # ratio - Confidence score (0-1), capped at 100%
                 'detection_type': 'sustained_frequency',
                 'frequency_occupation': frequency_occupation_ratio,
                 'analysis_window': analysis_window
@@ -252,7 +252,7 @@ class SmokeAlarmDetector:
             return {}
         
         # Get info about recent detection windows
-        recent_windows = list(self.detection_windows)[-10:]  # Last 10 windows
+        recent_windows = list(self.detection_windows)[-10:]  # samples - Analyze last 10 detection windows for status
         strong_signals = [d for d in recent_windows if d['is_strong_signal']]
         
         if not strong_signals:
