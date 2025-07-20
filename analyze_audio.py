@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 Simple audio analysis tool for smoke detector debugging.
 Analyzes frequency content at specific time points without requiring matplotlib.

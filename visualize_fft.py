@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 FFT visualization tool for smoke detector audio analysis.
 Shows frequency domain analysis over time to help debug detection issues.

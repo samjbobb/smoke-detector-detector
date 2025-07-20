@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 Smoke alarm detection algorithm and detector class.
 This module contains the complete smoke alarm detection logic used by both live monitoring and file processing.

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 Cross-platform audio recording script for smoke detector tests.
 Records audio in the correct format: 44.1kHz, mono, 16-bit WAV.

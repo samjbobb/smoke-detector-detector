@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 Extract test audio from YouTube videos for smoke detector testing.
 

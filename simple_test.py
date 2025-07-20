@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """Simple test to debug detection issues"""
 
 from smoke_detection_algorithm import SmokeAlarmDetector

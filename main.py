@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 Main entry point for smoke alarm detector.
 Handles live audio monitoring using sounddevice.

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 Debug version of smoke detection to understand what's happening.
 Uses the main algorithm with instrumentation hooks to eliminate code duplication.

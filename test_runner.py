@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
 """
 Test runner for smoke detector validation.
 Processes all test cases and reports accuracy metrics.
