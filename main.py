@@ -132,11 +132,60 @@ async def test_notifiers(manager: NotificationManager):
     return all_passed
 
 
+def get_audio_device(device_arg):
+    """Get and validate audio device."""
+    devices = sd.query_devices()
+    
+    # If no device specified, show available devices and prompt
+    if device_arg is None:
+        print("\nAvailable audio input devices:")
+        input_devices = []
+        for i, device in enumerate(devices):
+            if device['max_input_channels'] > 0:
+                default_marker = " (default)" if i == sd.default.device[0] else ""
+                print(f"  {i}: {device['name']}{default_marker}")
+                input_devices.append(i)
+        
+        if not input_devices:
+            print("❌ No input devices available")
+            sys.exit(1)
+        
+        print(f"\nUsing default device {sd.default.device[0]}: {devices[sd.default.device[0]]['name']}")
+        print("Use --device <number> to specify a different device\n")
+        return sd.default.device[0]
+    
+    # Parse device argument (could be number or name)
+    try:
+        device_id = int(device_arg)
+        if device_id < 0 or device_id >= len(devices):
+            print(f"❌ Device {device_id} not found")
+            sys.exit(1)
+    except ValueError:
+        # Try to find device by name
+        device_id = None
+        for i, device in enumerate(devices):
+            if device_arg.lower() in device['name'].lower():
+                device_id = i
+                break
+        if device_id is None:
+            print(f"❌ Device '{device_arg}' not found")
+            sys.exit(1)
+    
+    # Validate device has input channels
+    device_info = devices[device_id]
+    if device_info['max_input_channels'] == 0:
+        print(f"❌ Device {device_id} ({device_info['name']}) has no input channels")
+        sys.exit(1)
+    
+    return device_id
+
+
 def main():
     parser = argparse.ArgumentParser(description="Smoke alarm detector with notifications")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
     parser.add_argument("--no-notifications", action="store_true", help="Disable all notifications")
     parser.add_argument("--test-notifications", action="store_true", help="Test notifications and exit")
+    parser.add_argument("--device", type=str, help="Audio input device (number or name)")
     
     args = parser.parse_args()
     
@@ -156,12 +205,17 @@ def main():
         success = asyncio.run(test_notifiers(notification_manager))
         sys.exit(0 if success else 1)
     
+    # Get audio device
+    device_id = get_audio_device(args.device)
+    device_info = sd.query_devices()[device_id]
+    
     # Setup detector
     detector = SmokeAlarmDetector()
     trigger_callback = create_trigger_alarm_callback(notification_manager)
     detector.set_detection_callback(trigger_callback)
     
     print("🎤 Starting smoke alarm detection...")
+    print(f"Audio device: {device_id} - {device_info['name']}")
     print(f"Listening for alarms at ~{detector.target_frequency}Hz")
     
     if notification_manager and notification_manager.notifiers:
@@ -174,6 +228,7 @@ def main():
     
     try:
         with sd.InputStream(
+            device=device_id,
             callback=lambda indata, frames, time_info, status: audio_callback(indata, frames, time_info, status, detector),
             channels=1,
             samplerate=detector.sample_rate,
