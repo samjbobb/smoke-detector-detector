@@ -65,6 +65,36 @@
       "duration": 150.0,
       "expected_alarms": [],
       "extracted": true
+    },
+    {
+      "description": "MBP recording no alarms",
+      "filename": "recording_20250720_091036.wav",
+      "expected_alarms": [],
+      "notes": "Mostly silence."
+    },
+    {
+      "description": "MBP recording - signing - no alarms",
+      "filename": "recording_20250720_091135.wav",
+      "expected_alarms": [],
+      "notes": "Annoying signing, but no alarms."
+    },
+    {
+      "description": "MBP recording - house alarms",
+      "filename": "recording_20250720_093110.wav",
+      "expected_alarms": [45.0],
+      "notes": "Triggered from downstairs, recording in office"
+    },
+    {
+      "description": "MBP recording - house alarms 2",
+      "filename": "recording_20250720_093756.wav",
+      "expected_alarms": [28.0],
+      "notes": "Triggered from office, recording in office"
+    },
+    {
+      "description": "MBP recording - house alarms 3",
+      "filename": "recording_20250720_094135.wav",
+      "expected_alarms": [41.0],
+      "notes": "Triggered from bedroom, recording in office, with music"
     }
   ]
 }

@@ -9,7 +9,7 @@ import sys
 import librosa
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 from smoke_detection_algorithm import SmokeAlarmDetector
 
 
@@ -21,20 +21,20 @@ class TestRunner:
     def load_test_cases(self) -> List[Dict]:
         """Load test case configuration."""
         if not self.config_file.exists():
-            print("❌ No test cases found. Run extract_test_audio.py first.")
+            print("❌ No test cases found. Add test cases to test_audio/test_cases.json")
             return []
         
         with open(self.config_file) as f:
             config = json.load(f)
         
-        return [case for case in config["test_cases"] if case["extracted"]]
+        return config["test_cases"]
     
     def run_single_test(self, test_name_or_index: str) -> Dict:
         """Run a single test case with detailed analysis."""
         test_cases = self.load_test_cases()
         
         if not test_cases:
-            print("No extracted test cases to run.")
+            print("No test cases to run.")
             return {}
         
         # Find test case by name or index
@@ -69,7 +69,7 @@ class TestRunner:
         # Run detection
         print(f"🎵 Processing audio file: {target_case['filename']}")
         detections = self._process_audio_file(audio_file, verbose=True)
-        expected_alarms = target_case.get("expected_alarms", [])
+        expected_alarms = self._parse_expected_alarms(target_case.get("expected_alarms", []))
         
         # Detailed analysis
         result = self._analyze_results(detections, expected_alarms, target_case)
@@ -84,7 +84,7 @@ class TestRunner:
         test_cases = self.load_test_cases()
         
         if not test_cases:
-            print("No extracted test cases to run.")
+            print("No test cases to run.")
             return {"total": 0, "results": []}
         
         print(f"🧪 Running {len(test_cases)} test cases...")
@@ -102,7 +102,7 @@ class TestRunner:
             
             # Run detection
             detections = self._process_audio_file(audio_file, verbose=False)
-            expected_alarms = test_case.get("expected_alarms", [])
+            expected_alarms = self._parse_expected_alarms(test_case.get("expected_alarms", []))
             
             # Analyze results
             analysis = self._analyze_results(detections, expected_alarms, test_case)
@@ -163,6 +163,26 @@ class TestRunner:
                 print(f"   ℹ️  No smoke alarms detected")
         
         return detections
+    
+    def _parse_expected_alarms(self, expected_alarms: List[Union[str, float]]) -> List[float]:
+        """Parse expected alarms from either mm:ss format or seconds."""
+        parsed_alarms = []
+        for alarm in expected_alarms:
+            if isinstance(alarm, str) and ':' in alarm:
+                # Parse mm:ss format
+                try:
+                    parts = alarm.split(':')
+                    if len(parts) == 2:
+                        minutes, seconds = parts
+                        parsed_alarms.append(float(minutes) * 60 + float(seconds))
+                    else:
+                        print(f"⚠️  Invalid timestamp format: {alarm}")
+                except ValueError:
+                    print(f"⚠️  Could not parse timestamp: {alarm}")
+            else:
+                # Already in seconds format
+                parsed_alarms.append(float(alarm))
+        return parsed_alarms
     
     def _print_detailed_analysis(self, result: Dict, detections: List[Dict], expected: List[float]):
         """Print detailed breakdown of detection results."""
@@ -298,7 +318,7 @@ class TestRunner:
         return {
             "test_case": test_case["description"],
             "filename": test_case["filename"],
-            "duration": test_case["duration"],
+            "duration": test_case.get("duration", "unknown"),
             "expected_count": len(expected),
             "detected_count": len(detections),
             "true_positives": true_positives,

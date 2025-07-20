@@ -100,24 +100,19 @@ class TestAudioExtractor:
             "end_time": end_seconds,
             "duration": end_seconds - start_seconds,
             "expected_alarms": expected_seconds,
-            "extracted": False
         }
         
-        config["test_cases"].append(test_case)
-        self._save_config(config)
-        
-        print(f"✅ Added test case: {description}")
+        print(f"✅ Adding test case: {description}")
         print(f"   File: {filename}")
         print(f"   Duration: {end_seconds - start_seconds:.1f}s ({start_time} to {end_time})")
         if expected_seconds:
             alarm_times = [f"{t:.1f}s" for t in expected_seconds]
             print(f"   Expected alarms at: {', '.join(alarm_times)}")
-        
+
         # Automatically extract the audio
         print(f"\n🎵 Extracting audio...")
         if self._extract_audio(test_case):
-            # Update the config to mark as extracted
-            config["test_cases"][-1]["extracted"] = True
+            config["test_cases"].append(test_case)
             self._save_config(config)
             print(f"   ✅ Audio extracted successfully!")
         else:
@@ -136,38 +131,13 @@ class TestAudioExtractor:
         print("-" * 60)
         
         for i, case in enumerate(config["test_cases"], 1):
-            status = "✅ Extracted" if case["extracted"] else "⏳ Pending"
             print(f"{i}. {case['description']}")
             print(f"   File: {case['filename']}")
             print(f"   Duration: {case['duration']:.1f}s ({case['start_time']:.1f}-{case['end_time']:.1f}s)")
             if case['expected_alarms']:
                 print(f"   Expected alarms: {case['expected_alarms']}")
-            print(f"   Status: {status}")
             print()
-    
-    def extract_all(self):
-        """Extract audio for all pending test cases."""
-        config = self._load_config()
-        pending_cases = [case for case in config["test_cases"] if not case["extracted"]]
-        
-        if not pending_cases:
-            print("All test cases already extracted!")
-            return
-        
-        print(f"Extracting {len(pending_cases)} test cases...")
-        
-        for case in pending_cases:
-            print(f"\n🎵 Extracting: {case['description']}")
-            
-            if self._extract_audio(case):
-                case["extracted"] = True
-                print(f"   ✅ Success: {case['filename']}")
-            else:
-                print(f"   ❌ Failed: {case['filename']}")
-        
-        self._save_config(config)
-        print("\n🎉 Extraction complete!")
-    
+
     def _extract_audio(self, case: Dict) -> bool:
         """Extract audio segment using yt-dlp and ffmpeg."""
         output_path = self.test_dir / case["filename"]
@@ -224,9 +194,6 @@ def main():
     # List command
     subparsers.add_parser("list", help="List all test cases")
     
-    # Extract command
-    subparsers.add_parser("extract-all", help="Extract audio for all pending test cases")
-    
     args = parser.parse_args()
     
     if not args.command:
@@ -251,9 +218,6 @@ def main():
     elif args.command == "list":
         extractor.list_test_cases()
     
-    elif args.command == "extract-all":
-        extractor.extract_all()
-
 
 if __name__ == "__main__":
     main()
