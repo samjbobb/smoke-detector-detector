@@ -6,6 +6,8 @@ Processes all test cases and reports accuracy metrics.
 
 import json
 import sys
+import librosa
+import numpy as np
 from pathlib import Path
 from typing import Dict, List, Tuple
 from smoke_detection_algorithm import SmokeAlarmDetector
@@ -67,7 +69,7 @@ class TestRunner:
         
         # Run detection
         print(f"🎵 Processing audio file: {target_case['filename']}")
-        detections = self.detector.process_audio_file(audio_file, verbose=True)
+        detections = self._process_audio_file(audio_file, verbose=True)
         expected_alarms = target_case.get("expected_alarms", [])
         
         # Detailed analysis
@@ -100,7 +102,7 @@ class TestRunner:
                 continue
             
             # Run detection
-            detections = self.detector.process_audio_file(audio_file, verbose=False)
+            detections = self._process_audio_file(audio_file, verbose=False)
             expected_alarms = test_case.get("expected_alarms", [])
             
             # Analyze results
@@ -114,6 +116,53 @@ class TestRunner:
         self._print_overall_summary(results)
         
         return {"total": len(results), "results": results}
+    
+    def _process_audio_file(self, audio_file: Path, verbose: bool = True) -> List[Dict]:
+        """Process an audio file by streaming chunks to detector."""
+        if verbose:
+            print(f"   Loading audio file...")
+        
+        # Load audio file
+        try:
+            audio_data, sr = librosa.load(audio_file, sr=self.detector.sample_rate, mono=True)
+        except Exception as e:
+            print(f"   ❌ Error loading audio file: {e}")
+            return []
+        
+        # Reset detection state
+        self.detector.reset_state()
+        detections = []
+        
+        # Set up detection callback to collect results
+        def collect_detection(detection: Dict) -> None:
+            detections.append(detection)
+        
+        self.detector.set_detection_callback(collect_detection)
+        
+        # Process audio in chunks
+        chunk_samples = self.detector.chunk_size
+        total_chunks = len(audio_data) // chunk_samples
+        
+        if verbose:
+            print(f"   Duration: {len(audio_data) / sr:.1f}s")
+            print(f"   Processing {total_chunks} chunks...")
+        
+        for i in range(0, len(audio_data) - chunk_samples, chunk_samples):
+            chunk = audio_data[i:i + chunk_samples]
+            chunk_start_time = i / sr
+            
+            # Stream chunk to detector - same method as live monitoring
+            self.detector.process_audio_stream(chunk, chunk_start_time)
+        
+        if verbose:
+            if detections:
+                print(f"   ✅ Found {len(detections)} smoke alarm detections:")
+                for i, detection in enumerate(detections, 1):
+                    print(f"      {i}. {detection['timestamp']:.1f}s")
+            else:
+                print(f"   ℹ️  No smoke alarms detected")
+        
+        return detections
     
     def _print_detailed_analysis(self, result: Dict, detections: List[Dict], expected: List[float]):
         """Print detailed breakdown of detection results."""

@@ -4,15 +4,11 @@ Smoke alarm detection algorithm and detector class.
 This module contains the complete smoke alarm detection logic used by both live monitoring and file processing.
 """
 
-import sounddevice as sd
 import numpy as np
 from scipy import signal
-import librosa
 import time
-from threading import Event
-from pathlib import Path
 from collections import deque
-from typing import Optional, List, Dict
+from typing import Optional, Dict, Callable
 
 
 class SmokeAlarmDetector:
@@ -40,9 +36,8 @@ class SmokeAlarmDetector:
         self.min_beep_duration = min_beep_duration
         self.max_beep_duration = max_beep_duration
         
-        # Live monitoring state
-        self.audio_buffer = deque(maxlen=int(sample_rate * 10))  # 10 seconds buffer
-        self.stop_event = Event()
+        # Detection callback
+        self.detection_callback: Optional[Callable[[Dict], None]] = None
         
         # Detection state
         self.beep_timestamps = deque(maxlen=10)
@@ -51,16 +46,16 @@ class SmokeAlarmDetector:
         """Reset detection state."""
         self.beep_timestamps.clear()
     
-    def process_audio_chunk(self, audio_data: np.ndarray, timestamp: Optional[float] = None) -> bool:
+    def process_audio_chunk(self, audio_data: np.ndarray, timestamp: Optional[float] = None) -> Optional[Dict]:
         """
-        Process an audio chunk and return True if a smoke alarm pattern is detected.
+        Process an audio chunk and return detection info if a smoke alarm pattern is detected.
         
         Args:
             audio_data: Audio data chunk
             timestamp: Absolute timestamp for the chunk (for file processing)
             
         Returns:
-            True if smoke alarm detected in this chunk
+            Detection dict if smoke alarm detected, None otherwise
         """
         # Apply window function
         windowed = audio_data * signal.windows.hann(len(audio_data))
@@ -108,18 +103,18 @@ class SmokeAlarmDetector:
             current_time = timestamp if timestamp is not None else time.time()
             return self._record_beep(current_time, peak_frequency, signal_to_noise)
         
-        return False
+        return None
     
-    def _record_beep(self, timestamp: float, frequency: float, strength: float) -> bool:
+    def _record_beep(self, timestamp: float, frequency: float, strength: float) -> Optional[Dict]:
         """
         Record a beep detection and check for alarm pattern.
         
         Returns:
-            True if smoke alarm pattern is detected
+            Detection dict if smoke alarm pattern is detected, None otherwise
         """
-        # Consolidate consecutive beeps - if this beep is within 1 second of the last one,
+        # Consolidate consecutive beeps - if this beep is within consolidation window of the last one,
         # consider it the same beep and don't add a new timestamp
-        consolidation_window = 1.0  # seconds
+        consolidation_window = 1.0  # seconds - unified for both live and file processing
         if (len(self.beep_timestamps) > 0 and 
             timestamp - self.beep_timestamps[-1] < consolidation_window):
             # This is part of the same beep, don't add a new timestamp
@@ -150,9 +145,16 @@ class SmokeAlarmDetector:
                     # Additional check: ensure we have sustained pattern
                     min_beeps_in_sequence = 3  # Reduced from 4 to 3
                     if len(self.beep_timestamps) >= min_beeps_in_sequence:
-                        return True
+                        return {
+                            'timestamp': timestamp,
+                            'frequency': frequency,
+                            'strength': strength,
+                            'confidence': 1.0,
+                            'beep_count': len(self.beep_timestamps),
+                            'avg_interval': avg_interval
+                        }
         
-        return False
+        return None
     
     def get_detection_info(self) -> dict:
         """Get information about the last detection."""
@@ -173,106 +175,25 @@ class SmokeAlarmDetector:
             'last_timestamp': self.beep_timestamps[-1] if self.beep_timestamps else None
         }
 
-    def audio_callback(self, indata: np.ndarray, frames: int, time_info, status) -> None:
-        """Audio callback for live monitoring."""
-        if status:
-            print(f"Audio callback status: {status}")
-        
-        # Convert to mono if stereo
-        audio_data = indata[:, 0] if indata.ndim > 1 else indata
-        self.audio_buffer.extend(audio_data)
-        
-        # Process audio chunk
-        if self.process_audio_chunk(audio_data):
-            detection_info = self.get_detection_info()
-            self._trigger_alarm(
-                self.target_frequency,
-                40.0,  # Default strength for live detection
-                detection_info.get('avg_interval', 3.0)
-            )
+    def set_detection_callback(self, callback: Callable[[Dict], None]) -> None:
+        """Set callback function to be called when detection occurs."""
+        self.detection_callback = callback
     
-    def _trigger_alarm(self, frequency: float, strength: float, interval: float) -> None:
-        """Trigger alarm notification."""
-        print(f"\n🚨 SMOKE ALARM DETECTED! 🚨")
-        print(f"Frequency: {frequency:.1f} Hz")
-        print(f"Signal Strength: {strength:.2f}")
-        print(f"Beep Interval: {interval:.2f}s")
-        print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print("-" * 50)
-    
-    def start_monitoring(self) -> None:
-        """Start live audio monitoring."""
-        print("🎤 Starting smoke alarm detection...")
-        print(f"Listening for alarms at ~{self.target_frequency}Hz")
-        print("Press Ctrl+C to stop")
+    def process_audio_stream(self, audio_data: np.ndarray, timestamp: Optional[float] = None) -> Optional[Dict]:
+        """Process audio stream chunk and trigger callback if detection occurs.
         
-        try:
-            with sd.InputStream(
-                callback=self.audio_callback,
-                channels=1,
-                samplerate=self.sample_rate,
-                blocksize=self.chunk_size
-            ):
-                while not self.stop_event.is_set():
-                    time.sleep(0.1)
-                    
-        except KeyboardInterrupt:
-            print("\n🛑 Stopping smoke alarm detection...")
-        except Exception as e:
-            print(f"❌ Error: {e}")
-    
-    def stop_monitoring(self) -> None:
-        """Stop live monitoring."""
-        self.stop_event.set()
-
-    def process_audio_file(self, audio_file: Path, verbose: bool = True) -> List[Dict]:
-        """Process an audio file and return list of detected alarms with timestamps."""
-        if verbose:
-            print(f"🎵 Processing audio file: {audio_file.name}")
+        This is the main method both live monitoring and file processing should use.
         
-        # Load audio file
-        try:
-            audio_data, sr = librosa.load(audio_file, sr=self.sample_rate, mono=True)
-        except Exception as e:
-            print(f"❌ Error loading audio file: {e}")
-            return []
-        
-        # Reset detection state
-        self.reset_state()
-        detections = []
-        
-        # Process audio in chunks
-        chunk_samples = self.chunk_size
-        total_chunks = len(audio_data) // chunk_samples
-        
-        if verbose:
-            print(f"   Duration: {len(audio_data) / sr:.1f}s")
-            print(f"   Processing {total_chunks} chunks...")
-        
-        for i in range(0, len(audio_data) - chunk_samples, chunk_samples):
-            chunk = audio_data[i:i + chunk_samples]
-            chunk_start_time = i / sr
+        Args:
+            audio_data: Audio data chunk
+            timestamp: Timestamp for the chunk (defaults to current time)
             
-            # Process chunk with timestamp
-            if self.process_audio_chunk(chunk, chunk_start_time):
-                # Calculate actual detection time
-                detection_time = chunk_start_time + (chunk_samples / sr / 2)  # Middle of chunk
-                
-                # Consolidate detections - avoid duplicates within 5 seconds
-                consolidation_window = 5.0  # seconds
-                if not detections or detection_time - detections[-1]['timestamp'] > consolidation_window:
-                    detections.append({
-                        'timestamp': detection_time,
-                        'frequency': self.target_frequency,
-                        'confidence': 1.0  # Could calculate actual confidence
-                    })
-        
-        if verbose:
-            if detections:
-                print(f"   ✅ Found {len(detections)} smoke alarm detections:")
-                for i, detection in enumerate(detections, 1):
-                    print(f"      {i}. {detection['timestamp']:.1f}s")
-            else:
-                print(f"   ℹ️  No smoke alarms detected")
-        
-        return detections
+        Returns:
+            Detection dict if alarm detected, None otherwise
+        """
+        detection = self.process_audio_chunk(audio_data, timestamp)
+        if detection and self.detection_callback:
+            self.detection_callback(detection)
+        return detection
+    
+
