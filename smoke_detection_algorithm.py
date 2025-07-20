@@ -19,27 +19,38 @@ class SmokeAlarmDetector:
         sample_rate: int = 44100,
         chunk_size: int = 4096,
         target_frequency: float = 3200.0,
-        frequency_tolerance: float = 300.0,
-        beep_duration: float = 0.5,
-        beep_interval: float = 3.0,
-        confidence_threshold: int = 3,
-        min_beep_duration: float = 0.3,  # Minimum duration to be considered a smoke alarm beep
-        max_beep_duration: float = 1.5   # Maximum duration for a single beep
+        frequency_tolerance: float = 400.0,  # Increased tolerance
+        ambient_learning_time: float = 10.0,  # Seconds to learn ambient levels
+        alarm_sustain_threshold: float = 4.0,  # Seconds of sustained signal to trigger
+        alarm_latch_time: float = 300.0,  # 5 minutes latch period
+        min_signal_ratio: float = 75.0,  # Minimum signal to background ratio (further increased)
+        frequency_occupation_threshold: float = 0.25  # Minimum % of time frequency must be present
     ):
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
         self.target_frequency = target_frequency
         self.frequency_tolerance = frequency_tolerance
-        self.beep_duration = beep_duration
-        self.beep_interval = beep_interval
-        self.confidence_threshold = confidence_threshold
-        self.min_beep_duration = min_beep_duration
-        self.max_beep_duration = max_beep_duration
+        self.ambient_learning_time = ambient_learning_time
+        self.alarm_sustain_threshold = alarm_sustain_threshold
+        self.alarm_latch_time = alarm_latch_time
+        self.min_signal_ratio = min_signal_ratio
+        self.frequency_occupation_threshold = frequency_occupation_threshold
         
         # Detection callback
         self.detection_callback: Optional[Callable[[Dict], None]] = None
         
-        # Detection state
+        # State tracking for improved algorithm
+        self.start_time: Optional[float] = None
+        self.ambient_background_level = 0.0
+        self.ambient_samples_count = 0
+        self.is_learning_ambient = True
+        
+        # Track detection windows for sustained signal analysis
+        self.detection_windows = deque(maxlen=100)  # Store recent detection results
+        self.last_alarm_time: Optional[float] = None
+        self.is_alarm_latched = False
+        
+        # Legacy compatibility
         self.beep_timestamps = deque(maxlen=10)
     
     
@@ -54,7 +65,20 @@ class SmokeAlarmDetector:
         Returns:
             Detection dict if smoke alarm detected, None otherwise
         """
-        # Apply window function
+        current_time = timestamp if timestamp is not None else time.time()
+        
+        # Initialize start time on first chunk
+        if self.start_time is None:
+            self.start_time = current_time
+        
+        # Check if we're in alarm latch period
+        if self.is_alarm_latched and self.last_alarm_time:
+            if current_time - self.last_alarm_time < self.alarm_latch_time:
+                return None  # Still in latch period
+            else:
+                self.is_alarm_latched = False  # Reset latch
+        
+        # Apply window function to reduce spectral leakage
         windowed = audio_data * signal.windows.hann(len(audio_data))
         
         # Compute FFT
@@ -62,114 +86,197 @@ class SmokeAlarmDetector:
         freqs = np.fft.rfftfreq(len(windowed), 1/self.sample_rate)
         magnitudes = np.abs(fft)
         
-        # Find peak frequency in target range
+        # Calculate overall background level (excluding target frequency)
         target_range = (
             self.target_frequency - self.frequency_tolerance,
             self.target_frequency + self.frequency_tolerance
         )
         mask = (freqs >= target_range[0]) & (freqs <= target_range[1])
+        background_mask = ~mask
         
+        if np.any(background_mask):
+            current_background = np.mean(magnitudes[background_mask])
+        else:
+            current_background = np.mean(magnitudes) * 0.1
+        
+        # Learn ambient levels during startup
+        time_since_start = current_time - self.start_time
+        if self.is_learning_ambient and time_since_start < self.ambient_learning_time:
+            self.ambient_background_level = (
+                self.ambient_background_level * self.ambient_samples_count + current_background
+            ) / (self.ambient_samples_count + 1)
+            self.ambient_samples_count += 1
+            return None  # Don't detect during learning phase
+        elif self.is_learning_ambient:
+            self.is_learning_ambient = False  # Done learning
+        
+        # Analyze target frequency range
         if not np.any(mask):
-            return False
+            self._record_detection_window(current_time, False, 0.0, 0.0, 0.0)
+            return None
             
         target_magnitudes = magnitudes[mask]
         target_freqs = freqs[mask]
         
-        # Check if there's a strong peak in target frequency range
+        # Find peak in target frequency range
         peak_idx = np.argmax(target_magnitudes)
         peak_magnitude = target_magnitudes[peak_idx]
         peak_frequency = target_freqs[peak_idx]
         
-        # Calculate signal strength relative to background noise
-        background_mask = ~mask
-        if np.any(background_mask):
-            background_noise = np.mean(magnitudes[background_mask])
-        else:
-            background_noise = np.mean(magnitudes) * 0.1  # Fallback
+        # Calculate metrics for alarm detection
+        signal_to_background = peak_magnitude / (self.ambient_background_level + 1e-10)
+        signal_to_current = peak_magnitude / (current_background + 1e-10)
         
-        signal_to_noise = peak_magnitude / (background_noise + 1e-10)
+        # Check if signal is strong enough with more stringent criteria
+        is_strong_signal = (
+            signal_to_background > self.min_signal_ratio and
+            signal_to_current > 8.0 and  # Increased from 5.0
+            peak_magnitude > np.mean(magnitudes) * 12.0  # Increased from 8.0
+        )
         
-        # More reasonable thresholds for beep detection
-        magnitude_threshold = np.percentile(magnitudes, 90)  # Top 10% of frequencies
+        # Record this detection window
+        self._record_detection_window(current_time, is_strong_signal, peak_frequency, 
+                                      signal_to_background, peak_magnitude)
         
-        if (signal_to_noise > 10.0 and  # Reasonable SNR threshold
-            peak_magnitude > magnitude_threshold * 2.0 and  # Strong absolute signal
-            peak_magnitude > np.mean(magnitudes) * 15):  # Strong signal check
+        # Analyze sustained signal over recent time window
+        return self._analyze_sustained_detection(current_time, peak_frequency, signal_to_background)
+    
+    def _record_detection_window(self, timestamp: float, is_strong_signal: bool, 
+                                 frequency: float, signal_ratio: float, magnitude: float) -> None:
+        """Record a detection window result for sustained analysis."""
+        self.detection_windows.append({
+            'timestamp': timestamp,
+            'is_strong_signal': is_strong_signal,
+            'frequency': frequency,
+            'signal_ratio': signal_ratio,
+            'magnitude': magnitude
+        })
+    
+    def _analyze_sustained_detection(self, current_time: float, peak_frequency: float, 
+                                     signal_ratio: float) -> Optional[Dict]:
+        """
+        Analyze recent detection windows for sustained smoke alarm signal.
+        
+        This replaces the 3-beep pattern detection with frequency/loudness/time-domain analysis.
+        """
+        if len(self.detection_windows) < 5:  # Need some history
+            return None
+        
+        # Analyze recent window (last N seconds)
+        analysis_window = self.alarm_sustain_threshold
+        recent_detections = [
+            d for d in self.detection_windows 
+            if current_time - d['timestamp'] <= analysis_window
+        ]
+        
+        if len(recent_detections) < 3:  # Need minimum samples
+            return None
+        
+        # Calculate metrics over the analysis window
+        strong_signal_count = sum(1 for d in recent_detections if d['is_strong_signal'])
+        total_detections = len(recent_detections)
+        frequency_occupation_ratio = strong_signal_count / total_detections
+        
+        # Get frequency consistency
+        strong_detections = [d for d in recent_detections if d['is_strong_signal']]
+        if len(strong_detections) < 2:
+            return None
             
-            # Use provided timestamp or current time
-            current_time = timestamp if timestamp is not None else time.time()
-            return self._record_beep(current_time, peak_frequency, signal_to_noise)
+        frequencies = [d['frequency'] for d in strong_detections]
+        freq_std = np.std(frequencies)
+        avg_frequency = np.mean(frequencies)
+        avg_signal_ratio = np.mean([d['signal_ratio'] for d in strong_detections])
+        
+        # Enhanced alarm detection criteria with better discrimination
+        # 1. High frequency occupation (signal present most of the time)
+        # 2. Consistent frequency (not random noise)
+        # 3. Strong signal relative to ambient background
+        # 4. Sustained over minimum time period
+        # 5. Consistent signal strength (not just noise spikes)
+        # 6. Temporal pattern analysis (not constant presence)
+        
+        signal_ratios = [d['signal_ratio'] for d in strong_detections]
+        signal_ratio_std = np.std(signal_ratios) if len(signal_ratios) > 1 else 0.0
+        
+        # Check for temporal variation (smoke alarms often have pulses, not constant tones)
+        # If occupation is too high (near 100%), it might be music or constant noise
+        is_reasonable_occupation = 0.20 <= frequency_occupation_ratio <= 0.80
+        
+        # Check signal strength variation - smoke alarms often have some variation
+        signal_strength_variation = signal_ratio_std / (avg_signal_ratio + 1e-10)
+        has_reasonable_variation = 0.1 <= signal_strength_variation <= 2.0
+        
+        # Exclude sounds that are too consistent (like pure tones) OR too inconsistent (like noise/music)
+        # Sweet spot: some variation but not too much
+        has_appropriate_consistency = (
+            ((10.0 < freq_std < 100.0) or (freq_std <= 10.0 and avg_signal_ratio > 500)) and  # Allow very consistent strong signals
+            (0.2 < signal_strength_variation < 1.2)  # Moderate variation expected
+        )
+        
+        alarm_detected = (
+            frequency_occupation_ratio >= self.frequency_occupation_threshold and
+            is_reasonable_occupation and  # Not constant presence
+            avg_signal_ratio > self.min_signal_ratio and
+            has_reasonable_variation and  # Some strength variation expected  
+            has_appropriate_consistency and  # Proper frequency and strength consistency
+            self.target_frequency - self.frequency_tolerance <= avg_frequency <= self.target_frequency + self.frequency_tolerance and
+            len(strong_detections) >= 5  # Need sustained detection over multiple chunks
+        )
+        
+        if alarm_detected:
+            # Set latch to prevent immediate re-triggering
+            self.last_alarm_time = current_time
+            self.is_alarm_latched = True
+            
+            return {
+                'timestamp': current_time,
+                'frequency': avg_frequency,
+                'strength': avg_signal_ratio,
+                'confidence': min(1.0, frequency_occupation_ratio * 2.0),
+                'detection_type': 'sustained_frequency',
+                'frequency_occupation': frequency_occupation_ratio,
+                'analysis_window': analysis_window
+            }
         
         return None
     
     def _record_beep(self, timestamp: float, frequency: float, strength: float) -> Optional[Dict]:
-        """
-        Record a beep detection and check for alarm pattern.
-        
-        Returns:
-            Detection dict if smoke alarm pattern is detected, None otherwise
-        """
-        # Consolidate consecutive beeps - if this beep is within consolidation window of the last one,
-        # consider it the same beep and don't add a new timestamp
-        consolidation_window = 1.0  # seconds - unified for both live and file processing
-        if (len(self.beep_timestamps) > 0 and 
-            timestamp - self.beep_timestamps[-1] < consolidation_window):
-            # This is part of the same beep, don't add a new timestamp
-            pass
-        else:
-            # This is a new beep
-            self.beep_timestamps.append(timestamp)
-        
-        # Check for alarm pattern - need at least 3 beeps for reliable pattern detection
-        if len(self.beep_timestamps) >= max(3, self.confidence_threshold):
-            intervals = []
-            for i in range(1, len(self.beep_timestamps)):
-                intervals.append(self.beep_timestamps[i] - self.beep_timestamps[i-1])
-            
-            # Analyze the last several intervals for consistency
-            recent_intervals = intervals[-4:] if len(intervals) >= 4 else intervals[-3:]
-            
-            if len(recent_intervals) >= 3:
-                avg_interval = np.mean(recent_intervals)
-                interval_std = np.std(recent_intervals)
-                
-                # Reasonable pattern matching for smoke alarms
-                if (2.5 <= avg_interval <= 4.5 and  # Typical smoke alarm interval range
-                    interval_std < 3.0 and  # Allow more timing variation for real-world conditions
-                    strength > 15.0 and  # Reasonable signal strength requirement
-                    self.target_frequency - self.frequency_tolerance <= frequency <= self.target_frequency + self.frequency_tolerance):
-                    
-                    # Additional check: ensure we have sustained pattern
-                    min_beeps_in_sequence = 3  # Reduced from 4 to 3
-                    if len(self.beep_timestamps) >= min_beeps_in_sequence:
-                        return {
-                            'timestamp': timestamp,
-                            'frequency': frequency,
-                            'strength': strength,
-                            'confidence': 1.0,
-                            'beep_count': len(self.beep_timestamps),
-                            'avg_interval': avg_interval
-                        }
-        
+        """Legacy method maintained for compatibility."""
+        # For compatibility with existing code, but the new algorithm doesn't use this
+        self.beep_timestamps.append(timestamp)
         return None
     
     def get_detection_info(self) -> dict:
-        """Get information about the last detection."""
-        if len(self.beep_timestamps) < 4:
+        """Get information about the current detection state."""
+        if len(self.detection_windows) < 2:
             return {}
         
-        # Calculate recent intervals
-        intervals = []
-        for i in range(1, len(self.beep_timestamps)):
-            intervals.append(self.beep_timestamps[i] - self.beep_timestamps[i-1])
+        # Get info about recent detection windows
+        recent_windows = list(self.detection_windows)[-10:]  # Last 10 windows
+        strong_signals = [d for d in recent_windows if d['is_strong_signal']]
         
-        recent_intervals = intervals[-4:] if len(intervals) >= 4 else intervals[-3:]
+        if not strong_signals:
+            return {
+                'ambient_background_level': self.ambient_background_level,
+                'is_learning_ambient': self.is_learning_ambient,
+                'detection_windows_count': len(recent_windows),
+                'strong_signals_count': 0
+            }
+        
+        frequencies = [d['frequency'] for d in strong_signals]
+        signal_ratios = [d['signal_ratio'] for d in strong_signals]
         
         return {
-            'avg_interval': np.mean(recent_intervals),
-            'interval_std': np.std(recent_intervals),
-            'beep_count': len(self.beep_timestamps),
-            'last_timestamp': self.beep_timestamps[-1] if self.beep_timestamps else None
+            'ambient_background_level': self.ambient_background_level,
+            'is_learning_ambient': self.is_learning_ambient,
+            'detection_windows_count': len(recent_windows),
+            'strong_signals_count': len(strong_signals),
+            'avg_frequency': np.mean(frequencies),
+            'frequency_std': np.std(frequencies) if len(frequencies) > 1 else 0.0,
+            'avg_signal_ratio': np.mean(signal_ratios),
+            'last_timestamp': recent_windows[-1]['timestamp'],
+            'is_alarm_latched': self.is_alarm_latched,
+            'last_alarm_time': self.last_alarm_time
         }
 
     def set_detection_callback(self, callback: Callable[[Dict], None]) -> None:
