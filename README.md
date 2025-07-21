@@ -2,6 +2,8 @@
 
 > Note: this was all written by Claude Code in a few hours over one weekend. I directed it but wrote essentially zero code. It's working for my use-case. I suspect the actual detection algorithm could be simpler, but I don't want to spend time on it. We live in a weird weird AI world now...
 
+> Purpose: I want to know if my dog is being terrorized by smoke detector false alarms when I'm not home.
+ 
 Detects smoke alarm beeping patterns using real-time audio analysis. Listens for the characteristic 3.2kHz beeping pattern of smoke alarms and triggers push notifications.
 
 ## Quick Start
