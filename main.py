@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import os
 from smoke_detection_algorithm import SmokeAlarmDetector
 from notifiers import (
     NotificationManager, 
@@ -90,11 +91,15 @@ def setup_logging(verbose: bool = False):
 
 
 def setup_notifiers() -> NotificationManager:
-    """Setup notification manager with hardcoded settings."""
+    """Setup notification manager with environment variable configuration."""
     notifiers = []
     
-    # Hardcoded ntfy configuration
-    ntfy_topic = "PLACEHOLDER_TOPIC"
+    # Get ntfy topic from environment variable
+    ntfy_topic = os.getenv("NTFY_TOPIC")
+    if not ntfy_topic:
+        print("❌ NTFY_TOPIC environment variable not set. Notifications disabled.")
+        return NotificationManager([])
+    
     ntfy_server = "https://ntfy.sh"
     max_retries = 3
     retry_delay = 1.0
