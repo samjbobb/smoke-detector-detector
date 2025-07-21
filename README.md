@@ -1,83 +1,66 @@
 # Smoke Detector Detector
 
-Detects smoke alarm beeping patterns using real-time audio analysis. Listens for the characteristic 3.2kHz beeping pattern of smoke alarms and triggers alerts.
+> Note: this was all written by Claude Code in a few hours over one weekend. I directed it but wrote essentially zero code. It's working for my use-case. I suspect the actual detection algorithm could be simpler, but I don't want to spend time on it. We live in a weird weird AI world now...
 
-## Features
-
-- Real-time microphone monitoring
-- Audio file processing for testing
-- YouTube test case extraction
-- Pattern recognition for smoke alarm sequences
-- Docker containerization support
+Detects smoke alarm beeping patterns using real-time audio analysis. Listens for the characteristic 3.2kHz beeping pattern of smoke alarms and triggers push notifications.
 
 ## Quick Start
 
 ### Live Monitoring
 ```bash
+./main.py
+# or
 uv run python main.py
 ```
 
-### Test with Audio File
+### Key Options
 ```bash
-uv run python main.py --test-file test_audio/sample.wav
+./main.py --device 1              # Specify audio input device
+./main.py -v                      # Verbose logging
+./main.py --test-notifications    # Test notification system
 ```
 
-### Docker
+### Required Setup
 ```bash
-docker build -t smoke-detector-detector .
-docker run --device /dev/snd smoke-detector-detector
+export NTFY_TOPIC="your-topic-name"  # Required for notifications
 ```
 
-## Testing Workflow
+## Testing
 
-### 1. Add Test Cases from YouTube (auto-extracts audio)
-```bash
-# Basic usage with MM:SS format - extracts audio immediately
-./extract_test_audio.py add "https://youtu.be/VIDEO_ID" "Description" "1:15" "1:25" --expect-alarms "1:18,1:22"
-
-# Mixed time formats supported
-./extract_test_audio.py add "https://youtu.be/VIDEO_ID" "Long test" "2:30" "180" --expect-alarms "2:32,155,2:40"
-```
-
-### 2. Run Tests
-
-#### Run All Tests
+### Run All Tests
 ```bash
 ./test_runner.py
 ```
 
-This will:
-- Process all extracted audio files
-- Compare detections against expected alarm timestamps
-- Report precision, recall, F1 scores for each test case
-- Show overall performance summary
-
-#### Debug Single Test Case
+### Debug Single Test
 ```bash
-# By test case number (from list command)
-./test_runner.py --single 1
-
-# By description/filename (partial match)
-./test_runner.py --single "kidde"
-./test_runner.py --single "alarm_test"
+./test_runner.py --single 1       # By test number
+./test_runner.py --single "kidde"  # By name/description
 ```
 
-Single test mode shows:
-- Expected vs detected alarm timestamps
-- True positives with detection latency
-- False positives (unexpected detections)  
-- False negatives (missed alarms)
-- Performance recommendations
+### Add Test Cases from YouTube
+```bash
+./extract_test_audio.py add "https://youtu.be/VIDEO_ID" "Description" "1:15" "1:25" --expect-alarms "1:18,1:22"
+```
 
-### 3. View Test Cases
+### View Test Cases
 ```bash
 ./extract_test_audio.py list
 ```
 
-### Optional: Extract pending cases
+## Features
+
+- Real-time microphone monitoring with configurable audio device selection
+- Push notifications via ntfy.sh
+- Comprehensive test suite with 99+ test cases from real smoke alarm videos
+- YouTube test case extraction and management
+- Pattern recognition for smoke alarm sequences (3.2kHz ± 300Hz)
+- Docker containerization support
+
+## Docker Deployment
 ```bash
-# Only needed if previous extractions failed
-./extract_test_audio.py extract-all
+docker build -t smoke-detector-detector .
+docker run --device /dev/snd -e NTFY_TOPIC="your-topic" smoke-detector-detector
 ```
 
 ## Time Format Reference
@@ -138,13 +121,10 @@ The test runner accepts detections within �2 seconds, covering the entire sequ
 - **Tolerance:** �2 seconds for alarm matching
 - **Metrics:** Precision, recall, F1 score, detection latency
 - **Performance Thresholds:**
-  - Excellent: F1 e 0.9
-  - Good: F1 e 0.8  
-  - Acceptable: F1 e 0.6
+  - Excellent: F1 ≥ 0.9, Good: F1 ≥ 0.8, Acceptable: F1 ≥ 0.6
 
-### Dependencies
-- `sounddevice`: Audio I/O
-- `numpy`: Signal processing
-- `scipy`: FFT and filtering
-- `librosa`: Audio file loading
-- `yt-dlp`: YouTube audio extraction
+### Key Dependencies
+- Uses `uv` for modern Python package management
+- `sounddevice`: Audio I/O, `numpy`: Signal processing
+- `scipy`: FFT and filtering, `librosa`: Audio file loading
+- `yt-dlp`: YouTube audio extraction, `httpx`: HTTP notifications
