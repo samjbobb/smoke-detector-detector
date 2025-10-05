@@ -14,7 +14,7 @@ Environment="HOME=/home/pi"
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 
 # Use uv to run the script
-ExecStart=/home/pi/.local/bin/uv run /home/pi/smoke-detector-detector/main.py
+ExecStart=/home/pi/smoke-detector-detector/.venv/bin/python /home/pi/smoke-detector-detector/main.py
 
 # Restart policy
 Restart=always
