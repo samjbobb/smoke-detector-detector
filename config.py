@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings.sources import JsonConfigSettingsSource
 
 
 class NtfyConfig(BaseModel):
@@ -34,6 +35,23 @@ class Config(BaseSettings):
 
     notifications: NotificationsConfig = NotificationsConfig()
     audio: AudioConfig = AudioConfig()
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        return (
+            init_settings,
+            JsonConfigSettingsSource(settings_cls),
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
 
 
 def load_config(config_path: Optional[Path] = None) -> Config:
