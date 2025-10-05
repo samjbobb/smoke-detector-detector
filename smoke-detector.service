@@ -13,8 +13,8 @@ WorkingDirectory=/home/pi/smoke-detector-detector
 Environment="HOME=/home/pi"
 Environment="PATH=/usr/local/bin:/usr/bin:/bin"
 
-# Use uv to run the script
-ExecStart=/home/pi/smoke-detector-detector/.venv/bin/python /home/pi/smoke-detector-detector/main.py
+# Use uv to run the script (unbuffered for immediate log output)
+ExecStart=/home/pi/smoke-detector-detector/.venv/bin/python -u /home/pi/smoke-detector-detector/main.py
 
 # Restart policy
 Restart=always

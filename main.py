@@ -83,7 +83,7 @@ def audio_callback(indata: np.ndarray, frames: int, time_info, status, detector:
 
 def setup_logging(verbose: bool = False):
     """Setup logging configuration."""
-    level = logging.DEBUG if verbose else logging.WARNING
+    level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
