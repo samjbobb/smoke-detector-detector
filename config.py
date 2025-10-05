@@ -24,6 +24,12 @@ class AudioConfig(BaseModel):
     device: Optional[str] = None
 
 
+class HeartbeatConfig(BaseModel):
+    """Heartbeat monitoring configuration."""
+    url: Optional[str] = None
+    interval_minutes: int = 5
+
+
 class Config(BaseSettings):
     """Application configuration."""
     model_config = SettingsConfigDict(
@@ -35,6 +41,7 @@ class Config(BaseSettings):
 
     notifications: NotificationsConfig = NotificationsConfig()
     audio: AudioConfig = AudioConfig()
+    heartbeat: HeartbeatConfig = HeartbeatConfig()
 
     @classmethod
     def settings_customise_sources(

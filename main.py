@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import requests
 from pathlib import Path
 from config import load_config, Config
 from smoke_detection_algorithm import SmokeAlarmDetector
@@ -55,10 +56,10 @@ def create_trigger_alarm_callback(notification_manager: NotificationManager):
                 except RuntimeError:
                     # No running loop, create a new one in a thread
                     import threading
-                    
+
                     def run_notification():
                         asyncio.run(notification_manager.notify_all(event))
-                    
+
                     thread = threading.Thread(target=run_notification, daemon=True)
                     thread.start()
                     
@@ -69,14 +70,30 @@ def create_trigger_alarm_callback(notification_manager: NotificationManager):
     return trigger_alarm
 
 
+def send_heartbeat(url: str):
+    """Send a heartbeat POST request.
+
+    Args:
+        url: Heartbeat monitoring URL
+    """
+    try:
+        response = requests.post(url, timeout=10)
+        if response.status_code == 200:
+            logging.debug(f"Heartbeat sent successfully to {url}")
+        else:
+            logging.warning(f"Heartbeat failed with status {response.status_code}")
+    except Exception as e:
+        logging.error(f"Failed to send heartbeat: {e}")
+
+
 def audio_callback(indata: np.ndarray, frames: int, time_info, status, detector: SmokeAlarmDetector) -> None:
     """Audio callback for live monitoring."""
     if status:
         print(f"Audio callback status: {status}")
-    
+
     # Convert to mono if stereo
     audio_data = indata[:, 0] if indata.ndim > 1 else indata
-    
+
     # Stream audio to detector
     detector.process_audio_stream(audio_data)
 
@@ -243,15 +260,27 @@ def main():
     print("🎤 Starting smoke alarm detection...")
     print(f"Audio device: {device_id} - {device_info['name']}")
     print(f"Listening for alarms at ~{detector.target_frequency}Hz")
-    
+
     if notification_manager and notification_manager.notifiers:
         notifier_names = [n.name for n in notification_manager.notifiers]
         print(f"📱 Notifications enabled: {', '.join(notifier_names)}")
     else:
         print("📱 Notifications disabled")
-    
+
+    # Setup heartbeat monitoring
+    heartbeat_url = config.heartbeat.url
+    heartbeat_interval = config.heartbeat.interval_minutes * 60  # Convert to seconds
+    next_heartbeat_time = None
+
+    if heartbeat_url:
+        # First heartbeat after initial interval (don't send on startup)
+        next_heartbeat_time = time.time() + heartbeat_interval
+        print(f"💓 Heartbeat enabled: {config.heartbeat.interval_minutes} min interval")
+    else:
+        print("💓 Heartbeat disabled")
+
     print("Press Ctrl+C to stop")
-    
+
     try:
         with sd.InputStream(
             device=device_id,
@@ -262,8 +291,13 @@ def main():
             latency=0.2  # 200ms buffer (explicit value instead of 'high')
         ):
             while True:
+                # Check if it's time to send heartbeat
+                if next_heartbeat_time is not None and time.time() >= next_heartbeat_time:
+                    send_heartbeat(heartbeat_url)
+                    next_heartbeat_time = time.time() + heartbeat_interval
+
                 time.sleep(0.1)
-                
+
     except KeyboardInterrupt:
         print("\n🛑 Stopping smoke alarm detection...")
     except Exception as e:

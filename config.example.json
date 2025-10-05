@@ -8,5 +8,9 @@
   },
   "audio": {
     "device": null
+  },
+  "heartbeat": {
+    "url": null,
+    "interval_minutes": 5
   }
 }
