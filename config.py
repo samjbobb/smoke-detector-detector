@@ -58,10 +58,20 @@ def load_config(config_path: Optional[Path] = None) -> Config:
     """Load configuration from JSON file.
 
     Args:
-        config_path: Path to config file. Uses 'config.json' if None.
+        config_path: Path to config file. Uses 'config.json' in script directory if None.
 
     Returns:
         Configuration loaded from file or defaults.
     """
+    if config_path is None:
+        config_path = Path(__file__).parent / 'config.json'
 
-    return Config()
+    return Config(_settings_customise_sources=(
+        lambda settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings: (
+            init_settings,
+            JsonConfigSettingsSource(settings_cls, json_file=config_path),
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
+    ))
