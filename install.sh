@@ -127,7 +127,7 @@ echo ""
 echo "Step 5: Installing Python dependencies..."
 echo "------------------------------------------"
 cd "$INSTALL_DIR"
-${USER_HOME}/.local/bin/uv sync
+${USER_HOME}/.local/bin/uv sync --no-dev
 echo "✓ Dependencies installed"
 
 echo ""
