@@ -76,7 +76,7 @@ echo "Step 2: Installing system dependencies..."
 echo "-----------------------------------------"
 echo "This will install audio libraries required for sound detection"
 sudo apt-get update
-sudo apt-get install -y portaudio19-dev python3-pyaudio ffmpeg
+sudo apt-get install -y portaudio19-dev python3-pyaudio ffmpeg libffi-dev
 
 # Ensure user is in audio group
 if ! groups | grep -q audio; then
@@ -134,36 +134,13 @@ echo ""
 echo "Step 6: Configuring application settings..."
 echo "-------------------------------------------"
 
-# Check if config.json already exists
 CONFIG_FILE="$INSTALL_DIR/config.json"
 if [ -f "$CONFIG_FILE" ]; then
-    echo "📄 Existing config.json found at $CONFIG_FILE"
-    read -p "Keep existing configuration? (Y/n): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        echo "✓ Keeping existing configuration"
-        KEEP_CONFIG=true
-    else
-        KEEP_CONFIG=false
-    fi
+    echo "✓ Using existing config.json"
 else
-    KEEP_CONFIG=false
-fi
-
-# Create new config if needed
-if [ "$KEEP_CONFIG" = false ]; then
-    # Check for environment variable or prompt for topic
-    if [ -z "$NTFY_TOPIC" ]; then
-        echo "Enter notification settings:"
-        read -p "ntfy.sh topic name (or press Enter for 'smoke-alarm'): " ntfy_input
-        if [ ! -z "$ntfy_input" ]; then
-            NTFY_TOPIC="$ntfy_input"
-        else
-            NTFY_TOPIC="smoke-alarm"
-        fi
-    else
-        echo "Migrating NTFY_TOPIC from environment: $NTFY_TOPIC"
-    fi
+    # Prompt for topic name
+    read -p "ntfy.sh topic name (or press Enter for 'smoke-alarm'): " ntfy_input
+    NTFY_TOPIC="${ntfy_input:-smoke-alarm}"
 
     # Create config.json
     cat > "$CONFIG_FILE" <<EOF
@@ -180,7 +157,7 @@ if [ "$KEEP_CONFIG" = false ]; then
   }
 }
 EOF
-    echo "✅ Created config.json with ntfy topic: $NTFY_TOPIC"
+    echo "✓ Created config.json with ntfy topic: $NTFY_TOPIC"
 fi
 
 echo ""
@@ -199,17 +176,6 @@ sudo cp "$TMP_SERVICE_FILE" /etc/systemd/system/$SERVICE_FILE
 rm "$TMP_SERVICE_FILE"
 sudo systemctl daemon-reload
 sudo systemctl enable ${SERVICE_NAME}.service
-
-echo ""
-echo "Step 8: Testing audio detection..."
-echo "-----------------------------------"
-echo "Testing if audio devices are accessible..."
-if ${USER_HOME}/.local/bin/uv run python3 -c "import sounddevice as sd; devices = sd.query_devices(); print(f'Found {len(devices)} audio devices')"; then
-    echo "✓ Audio devices detected"
-else
-    echo "⚠ Warning: Could not access audio devices"
-    echo "You may need to configure your audio input device"
-fi
 
 echo ""
 echo "========================================="
