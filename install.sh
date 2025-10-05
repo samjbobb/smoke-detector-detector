@@ -74,9 +74,10 @@ echo "✓ Python $PYTHON_VERSION found"
 echo ""
 echo "Step 2: Installing system dependencies..."
 echo "-----------------------------------------"
-echo "This will install audio libraries required for sound detection"
+echo "This will install audio libraries and pre-compiled scientific packages"
 sudo apt-get update
-sudo apt-get install -y portaudio19-dev python3-pyaudio ffmpeg libffi-dev
+sudo apt-get install -y portaudio19-dev python3-pyaudio ffmpeg libffi-dev \
+    python3-numpy python3-scipy
 
 # Ensure user is in audio group
 if ! groups | grep -q audio; then
