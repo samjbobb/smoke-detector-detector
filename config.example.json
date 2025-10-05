@@ -1,0 +1,12 @@
+{
+  "notifications": {
+    "ntfy": {
+      "enabled": true,
+      "topic": "your-smoke-alarm-topic",
+      "server": "https://ntfy.sh"
+    }
+  },
+  "audio": {
+    "device": null
+  }
+}

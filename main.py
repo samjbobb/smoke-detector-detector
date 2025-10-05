@@ -11,11 +11,12 @@ import argparse
 import asyncio
 import logging
 import sys
-import os
+from pathlib import Path
+from config import load_config, Config
 from smoke_detection_algorithm import SmokeAlarmDetector
 from notifiers import (
-    NotificationManager, 
-    NtfyNotifier, 
+    NotificationManager,
+    NtfyNotifier,
     DetectionEvent
 )
 
@@ -90,20 +91,21 @@ def setup_logging(verbose: bool = False):
     )
 
 
-def setup_notifiers() -> NotificationManager:
-    """Setup notification manager with environment variable configuration."""
+def setup_notifiers(config: Config) -> NotificationManager:
+    """Setup notification manager with configuration from config file."""
     notifiers = []
-    
-    # Get ntfy topic from environment variable
-    ntfy_topic = os.getenv("NTFY_TOPIC")
-    if not ntfy_topic:
-        print("❌ NTFY_TOPIC environment variable not set. Notifications disabled.")
+
+    # Get ntfy configuration
+    ntfy = config.notifications.ntfy
+    if not ntfy.enabled or not ntfy.topic:
+        print("❌ Notifications disabled (ntfy not configured or disabled in config.json)")
         return NotificationManager([])
-    
-    ntfy_server = "https://ntfy.sh"
+
+    ntfy_topic = ntfy.topic
+    ntfy_server = ntfy.server
     max_retries = 3
     retry_delay = 1.0
-    
+
     notifier = NtfyNotifier(
         topic=ntfy_topic,
         server=ntfy_server,
@@ -112,7 +114,7 @@ def setup_notifiers() -> NotificationManager:
     )
     notifiers.append(notifier)
     print(f"📱 Added ntfy notifier for topic: {ntfy_topic}")
-    
+
     return NotificationManager(notifiers)
 
 
@@ -199,15 +201,23 @@ def main():
     parser.add_argument("--no-notifications", action="store_true", help="Disable all notifications")
     parser.add_argument("--test-notifications", action="store_true", help="Test notifications and exit")
     parser.add_argument("--device", type=str, help="Audio input device (number or name)")
-    
+    parser.add_argument("--config", type=str, help="Path to config file (default: config.json)")
+
     args = parser.parse_args()
-    
+
     setup_logging(args.verbose)
-    
+
+    # Load configuration
+    config_path = Path(args.config) if args.config else None
+    config = load_config(config_path)
+    config_file = config_path or Path("config.json")
+    if config_file.exists():
+        print(f"📋 Loaded configuration from: {config_file}")
+
     # Setup notifications
     notification_manager = None
     if not args.no_notifications:
-        notification_manager = setup_notifiers()
+        notification_manager = setup_notifiers(config)
     
     # Test notifications and exit if requested
     if args.test_notifications:
@@ -219,9 +229,12 @@ def main():
         sys.exit(0 if success else 1)
     
     # Get audio device
-    device_id = get_audio_device(args.device)
+    # Use device from command line, then config file, then auto-detect
+    audio_device = config.audio.device
+    device_spec = args.device if args.device else audio_device if audio_device is not None else None
+    device_id = get_audio_device(device_spec)
     device_info = sd.query_devices()[device_id]
-    
+
     # Setup detector
     detector = SmokeAlarmDetector()
     trigger_callback = create_trigger_alarm_callback(notification_manager)

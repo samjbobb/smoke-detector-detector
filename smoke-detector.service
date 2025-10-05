@@ -1,0 +1,35 @@
+[Unit]
+Description=Smoke Detector Detector Service
+After=network.target sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+# User will be replaced by install script with actual username
+User=pi
+Group=audio
+# Paths will be replaced by install script with actual home directory
+WorkingDirectory=/home/pi/smoke-detector-detector
+Environment="HOME=/home/pi"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+# Use uv to run the script
+ExecStart=/home/pi/.local/bin/uv run /home/pi/smoke-detector-detector/main.py
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Give it time to start up properly
+TimeoutStartSec=60
+
+# Log output
+StandardOutput=journal
+StandardError=journal
+
+# Audio device access
+SupplementaryGroups=audio
+PrivateDevices=no
+
+[Install]
+WantedBy=multi-user.target

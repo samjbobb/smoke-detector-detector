@@ -20,11 +20,24 @@ uv run python main.py
 ./main.py --device 1              # Specify audio input device
 ./main.py -v                      # Verbose logging
 ./main.py --test-notifications    # Test notification system
+./main.py --config custom.json    # Use custom config file
 ```
 
-### Required Setup
-```bash
-export NTFY_TOPIC="your-topic-name"  # Required for notifications
+### Configuration
+Create a `config.json` file (see `config.example.json` for structure):
+```json
+{
+  "notifications": {
+    "ntfy": {
+      "enabled": true,
+      "topic": "your-topic-name",
+      "server": "https://ntfy.sh"
+    }
+  },
+  "audio": {
+    "device": null
+  }
+}
 ```
 
 ## Testing
@@ -61,8 +74,12 @@ export NTFY_TOPIC="your-topic-name"  # Required for notifications
 
 ## Docker Deployment
 ```bash
+# Create config.json first
+cp config.example.json config.json
+# Edit config.json with your settings
+
 docker build -t smoke-detector-detector .
-docker run --device /dev/snd -e NTFY_TOPIC="your-topic" smoke-detector-detector
+docker run --device /dev/snd -v $(pwd)/config.json:/app/config.json smoke-detector-detector
 ```
 
 ## Time Format Reference
@@ -130,3 +147,71 @@ The test runner accepts detections within �2 seconds, covering the entire sequ
 - `sounddevice`: Audio I/O, `numpy`: Signal processing
 - `scipy`: FFT and filtering, `librosa`: Audio file loading
 - `yt-dlp`: YouTube audio extraction, `httpx`: HTTP notifications
+
+## Raspberry Pi Deployment
+
+### Quick Install
+```bash
+# Clone the repository on your Pi
+git clone git@github.com:samjbobb/smoke-detector-detector.git
+cd smoke-detector-detector
+
+# Run the installer (will prompt for configuration)
+./install.sh
+```
+
+The installer will:
+1. Detect current user and configure paths accordingly
+2. Install system dependencies (audio libraries)
+3. Install uv package manager
+4. Copy project files to installation directory
+5. Set up Python dependencies
+6. Create `config.json` with your notification settings
+7. Configure as a systemd service for auto-start
+8. Start the service (optional)
+
+### Service Management
+```bash
+# Start/stop/restart the service
+sudo systemctl start smoke-detector
+sudo systemctl stop smoke-detector
+sudo systemctl restart smoke-detector
+
+# Check service status
+sudo systemctl status smoke-detector
+
+# View live logs
+sudo journalctl -u smoke-detector -f
+
+# Disable auto-start
+sudo systemctl disable smoke-detector
+```
+
+### Configuration
+
+The application uses a `config.json` file for all settings. The installer creates this automatically, but you can edit it later:
+
+```bash
+# Edit configuration
+nano ~/smoke-detector-detector/config.json
+
+# Restart service after config changes
+sudo systemctl restart smoke-detector
+```
+
+### Uninstall
+```bash
+./uninstall.sh  # Removes service and optionally backs up config
+```
+
+### Requirements
+- Raspberry Pi OS (Debian 12/Bookworm) or compatible
+- Python 3.12+
+- Audio input device (USB microphone recommended)
+- Network connection for notifications
+
+### Troubleshooting
+- **Audio device not found:** Check USB microphone connection and run `arecord -l`
+- **Permission denied:** Ensure user is in `audio` group: `sudo usermod -a -G audio $USER`
+- **Service fails to start:** Check logs with `sudo journalctl -u smoke-detector -n 50`
+- **No notifications:** Check `config.json` in installation directory (`~/smoke-detector-detector/config.json`)
